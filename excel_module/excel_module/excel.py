@@ -10,6 +10,8 @@ from copy import deepcopy
 from io import BytesIO
 from datetime import datetime
 from odoo import _, models
+import logging
+logger = logging.getLogger(__name__)
 
 class ExcelMaker(models.AbstractModel):
     _name = 'excel.maker'
@@ -26,7 +28,7 @@ class ExcelMaker(models.AbstractModel):
     }
 
     @api.model
-    def auto_fit_columns(self, binary_stream_content):
+    def auto_fit_columns(self, binary_stream_content, active_sheet=0):
         try:
             import uno
             import unohelper
@@ -35,53 +37,62 @@ class ExcelMaker(models.AbstractModel):
             return binary_stream_content
         filename = Path(tempfile.mktemp(suffix='.xlsx'))
         filename.write_bytes(binary_stream_content)
+        try:
 
-        def resize_spreadsheet_columns(controller, oSheet):
-            controller.setActiveSheet(oSheet)
-            columns = oSheet.getColumns()
-            oSheet.getRows()[0].OptimalHeight = True
-            columns.OptimalWidth = False
-            for i in range(len(columns)):
-                cell = oSheet.getCellByPosition(i, 0)
-                if not cell.String:
-                    break
-                oColumn = columns.getByIndex(i)
-                print(oColumn.Width)
-                oColumn.OptimalWidth = True
-                print(oColumn.Width)
-                print("------------")
-        # get the uno component context from the PyUNO runtime
-        localContext = uno.getComponentContext()
+            def resize_spreadsheet_columns(controller, oSheet):
+                controller.setActiveSheet(oSheet)
+                columns = oSheet.getColumns()
+                oSheet.getRows()[0].OptimalHeight = True
+                columns.OptimalWidth = False
+                for i in range(len(columns)):
+                    cell = oSheet.getCellByPosition(i, 0)
+                    if not cell.String:
+                        break
+                    oColumn = columns.getByIndex(i)
+                    print(oColumn.Width)
+                    oColumn.OptimalWidth = True
+                    print(oColumn.Width)
+                    print("------------")
+            # get the uno component context from the PyUNO runtime
+            localContext = uno.getComponentContext()
 
-        # create the UnoUrlResolver
-        resolver = localContext.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", localContext)
+            # create the UnoUrlResolver
+            resolver = localContext.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", localContext)
 
-        # connect to the running office
-        ctx = resolver.resolve("uno:socket,host=127.0.0.1,port=2002;urp;StarOffice.ComponentContext")
-        smgr = ctx.ServiceManager
+            # connect to the running office
+            ctx = resolver.resolve("uno:socket,host=127.0.0.1,port=2002;urp;StarOffice.ComponentContext")
+            smgr = ctx.ServiceManager
 
-        # get the central desktop object
-        desktop = smgr.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
+            # get the central desktop object
+            desktop = smgr.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
 
-        doc = desktop.loadComponentFromURL("file://{}".format(filename), "_blank", 0, ())
+            doc = desktop.loadComponentFromURL("file://{}".format(filename), "_blank", 0, ())
 
-        # access the current writer document
-        model = desktop.getCurrentComponent()
-        controller = model.getCurrentController()
+            # access the current writer document
+            model = desktop.getCurrentComponent()
+            controller = model.getCurrentController()
 
-        sheets = model.getSheets().createEnumeration()
-        for sheet in sheets:
-            resize_spreadsheet_columns(controller, sheet)
+            sheets = model.getSheets().createEnumeration()
+            sheets_indexed = []
+            for sheet in sheets:
+                sheets_indexed.append(sheet)
+                resize_spreadsheet_columns(controller, sheet)
 
-        args = (PropertyValue('FilterName', 0, 'Calc MS Excel 2007 XML', 0),)
-        filename.unlink()
-        filename = tempfile.mktemp(suffix='.xlsx')
-        doc.storeToURL("file://{}".format(filename), args)
-        doc.dispose()
+            controller.setActiveSheet(sheets_indexed[active_sheet])
 
-        filename = Path(filename)
-        content = filename.read_bytes()
-        filename.unlink()
+            args = (PropertyValue('FilterName', 0, 'Calc MS Excel 2007 XML', 0),)
+            filename.unlink()
+            filename = tempfile.mktemp(suffix='.xlsx')
+            doc.storeToURL("file://{}".format(filename), args)
+            doc.dispose()
+
+            filename = Path(filename)
+            content = filename.read_bytes()
+        except Exception as ex:
+            logger.error(ex)
+            return binary_stream_content
+        finally:
+            filename.unlink()
         return content
 
     @api.model
@@ -291,6 +302,9 @@ class ExcelMaker(models.AbstractModel):
         output.seek(0)
 
         result = output.read()
-        result = self.auto_fit_columns(result)
+        try:
+            result = self.auto_fit_columns(result)
+        except Exception as ex:
+            logger.error(ex)
 
         return result
