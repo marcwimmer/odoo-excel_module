@@ -19,9 +19,9 @@ class Excel(models.AbstractModel):
         return self.env['excel.maker'].get_workbook(constant_memory=constant_memory)
 
     @api.model
-    def finish_workbook(self, wb, output):
+    def finish_workbook(self, wb, output, active_sheet=0):
         wb.close()
         output.seek(0)
         content = output.read()
-        content = self.env['excel.maker'].auto_fit_columns(content)
+        content = self.env['excel.maker'].auto_fit_columns(content, active_sheet=active_sheet)
         return base64.encodestring(content)
