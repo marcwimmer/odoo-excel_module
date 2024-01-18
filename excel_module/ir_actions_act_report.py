@@ -8,7 +8,7 @@ class Report(models.Model):
 
     def render_excel(self, ids, data=None):
         model = self.model
-        records = self.env[model].with_context(active_test=False).browse(ids)
+        records = self.env[model].browse(ids)
         report_object = self.env['report.' + self.report_name]
         if getattr(report_object, 'excel_as_binary', False):
             content = report_object.excel_as_binary(records)
